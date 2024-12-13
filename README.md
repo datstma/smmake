@@ -5,13 +5,11 @@
 
 smmake is a powerful, cross-platform alternative to the traditional Unix `make` utility. It brings the familiar functionality of `make` to Windows and other operating systems without requiring the installation of odd tools such as Win32 GNU tools.
 
-The primary target audience in Windows x86_64/arm64 developers since there's no native make support built in. But it works on Linux and Mac just as well as a bonus should you prefer smmake over GNU make (for some unkonwn reason :) )
-
-### - It's currently a Golang project that you can build on your own, but I will be creating installable (MSI) packages for Windows. 
+#### - The primary target audience is Windows x86_64/arm64 developers since there's no native make support built in. But it works on Linux and Mac just as well as a bonus should you prefer smmake over GNU make (for some unkonwn reason :) )
 
 ## 📚 Parses your Makefile in the way you'd expect
 
-smmake supports most common Makefile features you'd expect, making it familiar for Make users while remaining approachable for newcomers:
+smmake supports most common Makefile features you'd expect, has the same syntax as regular Unix Make and some extras:
 
 ### Basic Features
 
@@ -34,14 +32,32 @@ smmake supports most common Makefile features you'd expect, making it familiar f
     - Smart Dependency Resolution
 
 ## 🔧 Installation
+### Windows installer, latest release
 
-Build it From source on your own
+https://github.com/datstma/smmake/releases/latest
 
+Or,build it from source on your own
+
+Requires that you have Golang(Go) installed locally. Follow the installation instructions on https://go.dev/
+
+Assuming that you have a working Go development environment installed, just execute the following:
+
+Windows
 ```bash
 git clone https://github.com/datstma/smmake.git
-cd smmake
+cd smmake/cmd
 go build -o smmake.exe cmd/main.go cmd/parser.go
 ```
+Will create a statically linked binary named smmake.exe
+
+Linux/ Mac/ *nix
+```bash
+git clone https://github.com/datstma/smmake.git
+cd smmake/cmd
+go build -o smmake cmd/main.go cmd/parser.go
+```
+Will create a statically linked binary named smmake
+
 ### Usage
 
 Then run smmake (instead of make)
@@ -51,3 +67,9 @@ smmake test         # Run tests
 smmake clean        # Clean build artifacts
 smmake --help | -h  # Shows you the help documentation
 ```
+Pro-tip, copy your smmake binary into a suitable folder and then add that folder into your $PATH environment variable. 
+If you use the Windows installer provided in the releases section, the PATH with will be automatically added for you. 
+
+## Author
+Stefan Månsby
+stefan@mansby.se
