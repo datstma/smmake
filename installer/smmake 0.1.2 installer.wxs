@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Simple Multi-Platform Make (smmake)" 
+           Language="1033" 
+           Version="0.1.2"
+           Manufacturer="Stefan Månsby" 
+           UpgradeCode="{0e08eef6-a0f4-4419-ab08-b309c668633a}"
+           Compressed="true">
+    
+    <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." />
+
+    <Media Id="1" Cabinet="cab1.cab" EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="smmake">
+        <!-- Component containing your executable -->
+        <Component Id="MainExeComponent" Guid="{89cb86f0-08cb-4e48-9fcc-6d49301d417f}">
+          <File Id="MainExe" 
+                Source="..\smmake.exe"
+                KeyPath="yes" />
+          <Shortcut Id="StartMenuShortcut"
+                    Directory="ProgramMenuFolder"
+                    Name="smmake"
+                    WorkingDirectory="INSTALLFOLDER" />
+        </Component>
+
+        <!-- Component for PATH environment variable -->
+        <Component Id="PathComponent" Guid="{df95663b-adbf-4625-ab9e-e5f1a3130b83}">
+          <Environment Id="PATH"
+                      Name="PATH"
+                      Value="[INSTALLFOLDER]"
+                      Permanent="no"
+                      Part="last"
+                      Action="set"
+                      System="no" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main">
+      <ComponentRef Id="MainExeComponent" />
+      <ComponentRef Id="PathComponent" />
+    </Feature>
+
+  </Package>
+</Wix>

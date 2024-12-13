@@ -2,11 +2,9 @@ package main
 
 import (
 	"fmt"
-	"github.com/joho/godotenv"
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -14,7 +12,7 @@ import (
 
 var (
 	DEBUG   bool
-	VERSION = "v0.1.0"
+	VERSION = "v0.1.2"
 )
 
 // Target represents a make target and its commands
@@ -173,9 +171,6 @@ func main() {
 }
 
 func run() error {
-	if err := loadEnv(); err != nil {
-		return fmt.Errorf("error loading .env file: %w", err)
-	}
 
 	args := parseArgs(os.Args[1:])
 
@@ -250,19 +245,4 @@ func parseArgs(args []string) arguments {
 	}
 
 	return result
-}
-
-func loadEnv() error {
-	envFile := ".env"
-	if _, err := os.Stat(envFile); os.IsNotExist(err) {
-		// If .env doesn't exist in the current directory, check in the parent directory
-		parentEnvFile := filepath.Join("..", envFile)
-		if _, err := os.Stat(parentEnvFile); err == nil {
-			envFile = parentEnvFile
-		} else {
-			// If .env is not found in either location, return without an error
-			return nil
-		}
-	}
-	return godotenv.Load(envFile)
 }
