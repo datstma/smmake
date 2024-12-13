@@ -1,15 +1,20 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"github.com/joho/godotenv"
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
+)
+
+var (
+	DEBUG   bool
+	VERSION = "v0.1.0"
 )
 
 // Target represents a make target and its commands
@@ -46,135 +51,6 @@ func NewMakefile() *Makefile {
 	}
 }
 
-// ParseMakefile reads and parses a Makefile.
-//
-// It processes the file line by line, identifying targets, dependencies, commands,
-// and variable definitions. It creates a Makefile struct that represents the
-// parsed content of the Makefile.
-//
-// Parameters:
-//   - filename: A string representing the path to the Makefile to be parsed.
-//
-// Returns:
-//   - *Makefile: A pointer to a Makefile struct containing the parsed information.
-//   - error: An error if any occurred during the parsing process, nil otherwise.
-//
-// ParseMakefile reads and parses a Makefile
-func ParseMakefile(filename string) (*Makefile, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, fmt.Errorf("error opening makefile: %v", err)
-	}
-	defer file.Close()
-
-	makefile := NewMakefile()
-	scanner := bufio.NewScanner(file)
-	var currentTarget *Target
-
-	for scanner.Scan() {
-		line := scanner.Text()                 // Don't trim here
-		fmt.Printf("Parsing line: %s\n", line) //DEBUG
-
-		// Skip empty lines and comments
-		if len(strings.TrimSpace(line)) == 0 || strings.HasPrefix(strings.TrimSpace(line), "#") {
-			continue
-		}
-
-		// Handle variable definitions
-		if strings.Contains(line, "=") {
-			parts := strings.SplitN(line, "=", 2)
-			if len(parts) == 2 {
-				varName := strings.TrimSpace(parts[0])
-				varValue := strings.TrimSpace(parts[1])
-				makefile.Variables[varName] = varValue
-				continue
-			}
-		}
-
-		// Check if this is a target definition
-		if !strings.HasPrefix(line, "\t") && strings.Contains(line, ":") {
-			parts := strings.SplitN(line, ":", 2)
-			targetName := strings.TrimSpace(parts[0])
-
-			// Handle pattern rules
-			if strings.Contains(targetName, "%") {
-				pattern := strings.Split(targetName, "%")
-				if len(pattern) == 2 {
-					currentTarget = &Target{
-						Name:        targetName,
-						Commands:    make([]Command, 0),
-						Pattern:     true,
-						PatternFrom: pattern[0],
-						PatternTo:   pattern[1],
-					}
-				}
-			} else {
-				currentTarget = &Target{
-					Name:         targetName,
-					Commands:     make([]Command, 0),
-					Dependencies: make([]string, 0),
-				}
-			}
-
-			// Parse dependencies
-			if len(parts) > 1 {
-				deps := strings.Fields(parts[1])
-				currentTarget.Dependencies = deps
-			}
-
-			makefile.Targets[targetName] = currentTarget
-			continue
-		}
-
-		// If line starts with a tab and we have a current target, it's a command
-		if strings.HasPrefix(line, "\t") {
-			if currentTarget != nil {
-				command := strings.TrimPrefix(line, "\t")
-				silent := false
-				if strings.HasPrefix(command, "@") {
-					silent = true
-					command = strings.TrimPrefix(command, "@")
-				}
-				command = strings.TrimSpace(command)
-				// Expand variables in command
-				command = makefile.expandVariables(command)
-				currentTarget.Commands = append(currentTarget.Commands, Command{
-					Cmd:    command,
-					Silent: silent,
-				})
-			}
-		}
-	}
-
-	// At the end of the function, print out the parsed targets //DEBUG
-	for targetName, target := range makefile.Targets {
-		fmt.Printf("Parsed target: %s\n", targetName)
-		fmt.Printf("  Commands:\n")
-		for _, cmd := range target.Commands {
-			silentStr := ""
-			if cmd.Silent {
-				silentStr = "(silent) "
-			}
-			fmt.Printf("    %s%s\n", silentStr, cmd.Cmd)
-		}
-		fmt.Printf("  Dependencies: %v\n", target.Dependencies)
-	}
-
-	return makefile, nil
-}
-
-// expandVariables replaces $(VAR) or ${VAR} with their values
-func (m *Makefile) expandVariables(str string) string {
-	re := regexp.MustCompile(`\$[\(\{]([^\)\}]+)[\)\}]`)
-	return re.ReplaceAllStringFunc(str, func(match string) string {
-		varName := match[2 : len(match)-1]
-		if val, ok := m.Variables[varName]; ok {
-			return val
-		}
-		return match
-	})
-}
-
 // findMatchingPatternRule finds a pattern rule that matches the target
 func (m *Makefile) findMatchingPatternRule(target string) *Target {
 	for _, t := range m.Targets {
@@ -205,7 +81,10 @@ func (m *Makefile) ExecuteTarget(targetName string) error {
 
 	target := m.Targets[targetName]
 	if target == nil {
-		fmt.Printf("Target '%s' not found in Makefile\n", targetName) //DEDUG
+
+		if DEBUG {
+			fmt.Printf("Target '%s' not found in Makefile\n", targetName) //DEDUG
+		}
 		// Check for pattern rules
 		if patternTarget := m.findMatchingPatternRule(targetName); patternTarget != nil {
 			target = patternTarget
@@ -279,69 +158,111 @@ func printHelp() {
 	fmt.Println("  -h, --help     Show this help message")
 	fmt.Println("  -f, --file     Specify a Makefile (default is 'Makefile')")
 	fmt.Println("  -v, --version  Show version information")
+	fmt.Println("  --debug        Enable debug mode")
 	fmt.Println("\nExamples:")
 	fmt.Println("  smmake         # Run the default target")
 	fmt.Println("  smmake test    # Run the 'test' target")
 	fmt.Println("  smmake -f custom.mk build  # Use 'custom.mk' file and run 'build' target")
+	fmt.Println("  smmake --debug build  # Run 'build' target with debug output")
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: smmake <target>")
-		fmt.Println("Run 'smmake --help' for more information.")
-		os.Exit(1)
+	if err := run(); err != nil {
+		log.Fatalf("Error: %v", err)
+	}
+}
+
+func run() error {
+	if err := loadEnv(); err != nil {
+		return fmt.Errorf("error loading .env file: %w", err)
 	}
 
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
+	args := parseArgs(os.Args[1:])
 
-	// Check for help or version flags
-	switch os.Args[1] {
-	case "-h", "--help":
+	if args.showHelp {
 		printHelp()
-		os.Exit(0)
-	case "-v", "--version":
-		version := os.Getenv("VERSION")
-		fmt.Println("smmake version " + version)
-		os.Exit(0)
+		return nil
 	}
 
-	makefilePath := "Makefile"
-	targetName := ""
-
-	// Parse command-line arguments
-	for i := 1; i < len(os.Args); i++ {
-		arg := os.Args[i]
-		if arg == "-f" || arg == "--file" {
-			if i+1 < len(os.Args) {
-				makefilePath = os.Args[i+1]
-				i++
-			} else {
-				fmt.Println("Error: -f or --file option requires a filename")
-				os.Exit(1)
-			}
-		} else {
-			targetName = arg
-			break
-		}
+	if args.showVersion {
+		fmt.Println("smmake version", VERSION)
+		return nil
 	}
 
-	fmt.Printf("Attempting to parse Makefile: %s\n", makefilePath)
-	makefile, err := ParseMakefile(makefilePath)
+	if DEBUG {
+		fmt.Println("Debug mode enabled")
+	}
+
+	fmt.Printf("Attempting to parse Makefile: %s\n", args.makefilePath)
+	makefile, err := ParseMakefile(args.makefilePath)
 	if err != nil {
-		log.Fatalf("Error parsing Makefile: %v", err)
+		return fmt.Errorf("error parsing Makefile: %w", err)
 	}
 	fmt.Println("Makefile parsed successfully")
 
-	if targetName == "" {
-		targetName = "all" // Default target
+	if args.targetName == "" {
+		args.targetName = "all" // Default target
 	}
 
-	fmt.Printf("Attempting to execute target: %s\n", targetName)
-	if err := makefile.ExecuteTarget(targetName); err != nil {
-		log.Fatalf("Error executing target: %v", err)
+	fmt.Printf("Attempting to execute target: %s\n", args.targetName)
+	if err := makefile.ExecuteTarget(args.targetName); err != nil {
+		return fmt.Errorf("error executing target: %w", err)
 	}
+
 	fmt.Println("Target execution completed")
+	return nil
+}
+
+type arguments struct {
+	showHelp     bool
+	showVersion  bool
+	makefilePath string
+	targetName   string
+}
+
+func parseArgs(args []string) arguments {
+	result := arguments{
+		makefilePath: "Makefile",
+	}
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-h", "--help":
+			result.showHelp = true
+			return result
+		case "-v", "--version":
+			result.showVersion = true
+			return result
+		case "--debug":
+			DEBUG = true
+		case "-f", "--file":
+			if i+1 < len(args) {
+				result.makefilePath = args[i+1]
+				i++
+			} else {
+				log.Fatal("Error: -f or --file option requires a filename")
+			}
+		default:
+			if result.targetName == "" {
+				result.targetName = args[i]
+			}
+		}
+	}
+
+	return result
+}
+
+func loadEnv() error {
+	envFile := ".env"
+	if _, err := os.Stat(envFile); os.IsNotExist(err) {
+		// If .env doesn't exist in the current directory, check in the parent directory
+		parentEnvFile := filepath.Join("..", envFile)
+		if _, err := os.Stat(parentEnvFile); err == nil {
+			envFile = parentEnvFile
+		} else {
+			// If .env is not found in either location, return without an error
+			return nil
+		}
+	}
+	return godotenv.Load(envFile)
 }

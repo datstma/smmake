@@ -7,7 +7,7 @@ build:
 	@echo "Building..."
 	
 	
-	@go build -o smmake.exe cmd/main.go
+	@go build -o smmake.exe cmd/main.go cmd/parser.go
 
 # Run the application
 run:
